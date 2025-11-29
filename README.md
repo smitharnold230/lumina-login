@@ -1,139 +1,142 @@
-# Lumina Login - Full Stack Authentication App
+# Lumina Login - Microservices Architecture
 
-A modern login/registration system with MongoDB and Docker.
+A modern full-stack authentication system built with microservices architecture using Docker.
 
-## 🚀 Features
+## 📁 Project Structure
 
-- Modern UI with Framer Motion animations
-- MongoDB database with Docker
-- JWT authentication
-- User registration and login
-- Password hashing with bcrypt
-- TypeScript support
+```
+lumina-login/
+├── frontend/              # React frontend service
+│   ├── components/        # React components
+│   ├── services/          # API services
+│   ├── Dockerfile         # Frontend container config
+│   ├── nginx.conf         # Nginx configuration
+│   ├── package.json       # Frontend dependencies
+│   └── vite.config.ts     # Vite configuration
+│
+├── backend/              # Express backend service
+│   ├── server/           # Backend source code
+│   │   ├── routes/       # API routes
+│   │   └── types/        # TypeScript types
+│   ├── Dockerfile        # Backend container config
+│   └── package.json      # Backend dependencies
+│
+├── database/             # MongoDB configuration
+│   └── mongo-init.js     # Database initialization
+│
+└── docker-compose.yml    # Orchestration configuration
+```
 
-## 📋 Prerequisites
+## 🏗️ Architecture
 
-- Node.js (v16+)
+- **Frontend**: React + TypeScript + Vite (Nginx) - Port 80
+- **Backend**: Express + Node.js - Port 5000
+- **Database**: MongoDB - Port 27017
+
+All services communicate through a Docker network.
+
+## 🚀 Quick Start
+
+### Prerequisites
 - Docker Desktop
-- npm or yarn
+- Docker Compose
 
-## 🛠️ Setup Instructions
-
-### 1. Start MongoDB with Docker
+### Run Everything
 
 ```powershell
-docker-compose up -d
+# Build and start all services
+docker-compose up -d --build
+
+# View logs
+docker-compose logs -f
+
+# Access the application
+# Frontend: http://localhost
+# Backend API: http://localhost:5000
+# MongoDB: localhost:27017
 ```
 
-This will start MongoDB on port 27017.
+## 🛠️ Development Setup
 
-### 2. Install Dependencies
-
+### Frontend Development
 ```powershell
+cd frontend
 npm install
-```
-
-### 3. Configure Environment
-
-The `.env` file is already configured with:
-- MongoDB connection string
-- JWT secret
-- API URL
-
-**⚠️ Important:** Change the JWT_SECRET in production!
-
-### 4. Run the Application
-
-Run both frontend and backend:
-
-```powershell
-npm run dev:all
-```
-
-Or run them separately:
-
-```powershell
-# Terminal 1 - Frontend
 npm run dev
-
-# Terminal 2 - Backend
-npm run dev:server
+# Access at http://localhost:3000
 ```
 
-## 🌐 Access
+### Backend Development
+```powershell
+cd backend
+npm install
+npm run dev
+# API at http://localhost:5000
+```
 
-- **Frontend:** http://localhost:3000
-- **Backend API:** http://localhost:5000
-- **MongoDB:** localhost:27017
+## 📦 Docker Commands
 
-### MongoDB Credentials
+### Build Individual Services
+```powershell
+# Build frontend
+docker build -t lumina-frontend ./frontend
 
-- Username: `admin`
-- Password: `password123`
-- Database: `lumina`
+# Build backend
+docker build -t lumina-backend ./backend
+```
 
-## 📡 API Endpoints
+### Manage Services
+```powershell
+# Stop all services
+docker-compose down
+
+# Restart a specific service
+docker-compose restart backend
+
+# View service logs
+docker-compose logs frontend
+docker-compose logs backend
+docker-compose logs database
+```
+
+## 🌐 API Endpoints
 
 - `POST /api/auth/register` - Register new user
 - `POST /api/auth/login` - Login user
-- `GET /api/auth/me` - Get current user (requires token)
-- `GET /api/health` - Health check
+- `GET /api/auth/me` - Get current user
+- `GET /api/health` - Backend health check
 
-## 🗄️ Database Management
+## 🔒 Environment Variables
 
-### View MongoDB Data
-
-```powershell
-docker exec -it lumina-mongodb mongosh -u admin -p password123 --authenticationDatabase admin
+### Frontend
+```
+VITE_API_URL=http://localhost:5000
 ```
 
-Then in MongoDB shell:
-
-```javascript
-use lumina
-db.users.find()
+### Backend
+```
+MONGODB_URI=mongodb://admin:password123@database:27017/lumina
+JWT_SECRET=your-super-secret-jwt-key
+PORT=5000
 ```
 
-### Stop MongoDB
+## 🗑️ Cleanup
 
 ```powershell
-docker-compose down
-```
-
-### Reset Database
-
-```powershell
+# Stop and remove everything
 docker-compose down -v
-docker-compose up -d
+
+# Remove all images
+docker-compose down --rmi all
 ```
 
-## 🔒 Security Notes
+## 🎨 Tech Stack
 
-- Passwords are hashed using bcrypt
-- JWT tokens expire after 7 days
-- Change default MongoDB credentials in production
-- Change JWT_SECRET in production
-- Use HTTPS in production
+- **Frontend**: React 19, TypeScript, Vite, Framer Motion, Nginx
+- **Backend**: Node.js, Express 5, TypeScript, JWT, bcrypt
+- **Database**: MongoDB 7
+- **DevOps**: Docker, Docker Compose
 
-## 📦 Tech Stack
+---
 
-- **Frontend:** React, TypeScript, Vite, Framer Motion, TailwindCSS
-- **Backend:** Express, TypeScript
-- **Database:** MongoDB
-- **Container:** Docker
-- **Authentication:** JWT, bcrypt
-
-## 🐛 Troubleshooting
-
-**MongoDB connection failed:**
-- Ensure Docker is running
-- Check if port 27017 is available
-- Run `docker-compose logs mongodb`
-
-**Frontend can't connect to backend:**
-- Ensure backend is running on port 5000
-- Check VITE_API_URL in .env
-
-## 📝 License
-
-MIT
+Built with ❤️ using Docker microservices architecture
