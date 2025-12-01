@@ -1,0 +1,218 @@
+pipeline {
+    agent any
+
+    options {
+        timestamps()
+        timeout(time: 30, unit: 'MINUTES')
+        buildDiscarder(logRotator(numToKeepStr: '10'))
+    }
+
+    parameters {
+        choice(
+            name: 'BRANCH_TO_BUILD',
+            choices: 'main\nprod\nprod.1.0',
+            description: 'Select the Git branch to checkout.'
+        )
+        string(
+            name: 'BACKEND_HOST',
+            defaultValue: '172.17.0.1',
+            description: 'Backend API host (use host IP for Docker, or backend for internal network)'
+        )
+        string(
+            name: 'BACKEND_PORT',
+            defaultValue: '5000',
+            description: 'Backend API port'
+        )
+    }
+
+    environment {
+        NODE_ENV = 'production'
+        VITE_API_URL = "http://${params.BACKEND_HOST}:${params.BACKEND_PORT}"
+        DOCKER_IMAGE_TAG = "${BUILD_NUMBER}_${params.BRANCH_TO_BUILD}"
+    }
+
+    stages {
+        stage('Initialization') {
+            steps {
+                script {
+                    echo "=========================================="
+                    echo "Frontend Pipeline Initialization"
+                    echo "=========================================="
+                    echo "Branch: ${params.BRANCH_TO_BUILD}"
+                    echo "Build Number: ${BUILD_NUMBER}"
+                    echo "Backend API URL: ${env.VITE_API_URL}"
+                    echo "=========================================="
+                }
+            }
+        }
+
+        stage('Checkout Frontend') {
+            steps {
+                script {
+                    echo "Checking out branch: ${params.BRANCH_TO_BUILD} (Sparse Checkout for frontend/ only)"
+                    checkout([
+                        $class: 'GitSCM',
+                        branches: [[name: "*/${params.BRANCH_TO_BUILD}"]],
+                        doGenerateSubmoduleConfigurations: false,
+                        extensions: [
+                            [$class: 'SparseCheckoutPaths', sparseCheckoutPaths: [
+                                [$class: 'SparseCheckoutPath', path: 'frontend/']
+                            ]]
+                        ],
+                        submoduleCfg: [],
+                        userRemoteConfigs: [[url: 'https://github.com/smitharnold230/lumina-login.git']]
+                    ])
+                }
+            }
+        }
+
+        stage('Validate Docker & Environment') {
+            steps {
+                script {
+                    echo "Validating Docker installation and environment variables..."
+                    try {
+                        bat '''
+                            docker --version
+                            docker-compose --version
+                            echo VITE_API_URL will be: %VITE_API_URL%
+                        '''
+                    } catch (Exception e) {
+                        error("Docker validation failed: ${e.message}")
+                    }
+                }
+            }
+        }
+
+        stage('Stop & Remove Existing Frontend Container') {
+            steps {
+                script {
+                    echo "Removing existing frontend container if running..."
+                    dir('frontend') {
+                        bat '''
+                            docker-compose -f docker-compose.yml down frontend 2>nul || echo "No existing container to remove"
+                            timeout /t 5 /nobreak
+                        '''
+                    }
+                }
+            }
+        }
+
+        stage('Build Frontend Docker Image') {
+            steps {
+                script {
+                    echo "Building frontend Docker image..."
+                    dir('frontend') {
+                        bat '''
+                            docker build -t lumina-frontend:%DOCKER_IMAGE_TAG% .
+                            docker tag lumina-frontend:%DOCKER_IMAGE_TAG% lumina-frontend:latest
+                        '''
+                    }
+                }
+            }
+        }
+
+        stage('Run Frontend Service') {
+            steps {
+                script {
+                    echo "Starting frontend service with environment variables..."
+                    dir('frontend') {
+                        withEnv([
+                            "NODE_ENV=${NODE_ENV}",
+                            "VITE_API_URL=${env.VITE_API_URL}",
+                            "DOCKER_IMAGE_TAG=${DOCKER_IMAGE_TAG}"
+                        ]) {
+                            bat '''
+                                echo Starting Frontend Service...
+                                docker-compose -f docker-compose.yml up -d --build --force-recreate frontend
+                                timeout /t 10 /nobreak
+                            '''
+                        }
+                    }
+                }
+            }
+        }
+
+        stage('Health Check Frontend') {
+            steps {
+                script {
+                    echo "Performing health check on frontend service..."
+                    retry(5) {
+                        try {
+                            bat '''
+                                timeout /t 2 /nobreak
+                                curl -f http://localhost:80
+                            '''
+                            echo "✓ Frontend health check passed"
+                        } catch (Exception e) {
+                            echo "Health check attempt failed, retrying..."
+                            throw e
+                        }
+                    }
+                }
+            }
+        }
+
+        stage('Verify Container Status') {
+            steps {
+                script {
+                    echo "Verifying container is running..."
+                    bat '''
+                        docker ps -f name=lumina-frontend --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
+                    '''
+                }
+            }
+        }
+
+        stage('Log Collection') {
+            steps {
+                script {
+                    echo "Collecting container logs..."
+                    bat '''
+                        echo === Frontend Container Logs ===
+                        docker logs lumina-frontend
+                    '''
+                }
+            }
+        }
+    }
+
+    post {
+        success {
+            script {
+                echo "=========================================="
+                echo "✓ Frontend Pipeline Completed Successfully"
+                echo "=========================================="
+                echo "Frontend is running at: http://localhost"
+                echo "Backend API configured at: ${env.VITE_API_URL}"
+                echo "=========================================="
+            }
+        }
+
+        failure {
+            script {
+                echo "=========================================="
+                echo "✗ Frontend Pipeline Failed"
+                echo "=========================================="
+                bat '''
+                    echo === Container Status ===
+                    docker ps -a | findstr lumina-frontend
+                    echo.
+                    echo === Container Logs ===
+                    docker logs lumina-frontend 2>&1 || echo "No logs available"
+                '''
+            }
+        }
+
+        unstable {
+            script {
+                echo "Frontend pipeline is unstable. Check logs above."
+            }
+        }
+
+        always {
+            script {
+                echo "Pipeline execution finished at: ${new Date()}"
+            }
+        }
+    }
+}

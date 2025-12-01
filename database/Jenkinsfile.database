@@ -1,0 +1,215 @@
+pipeline {
+    agent any
+
+    options {
+        timestamps()
+        timeout(time: 30, unit: 'MINUTES')
+        buildDiscarder(logRotator(numToKeepStr: '10'))
+    }
+
+    parameters {
+        choice(
+            name: 'BRANCH_TO_BUILD',
+            choices: 'main\nprod',
+            description: 'Select the Git branch to checkout.'
+        )
+        string(
+            name: 'MONGO_ADMIN_PASSWORD',
+            defaultValue: 'strongpassword123',
+            description: 'MongoDB root password'
+        )
+    }
+
+    environment {
+        NODE_ENV = 'production'
+        MONGO_INITDB_ROOT_USERNAME = 'admin'
+        MONGO_INITDB_ROOT_PASSWORD = credentials('mongo-root-password')
+        MONGO_INITDB_DATABASE = 'lumina'
+        DOCKER_IMAGE_TAG = "${BUILD_NUMBER}_${params.BRANCH_TO_BUILD}"
+    }
+
+    stages {
+        stage('Initialization') {
+            steps {
+                script {
+                    echo "=========================================="
+                    echo "Database Pipeline Initialization"
+                    echo "=========================================="
+                    echo "Branch: ${params.BRANCH_TO_BUILD}"
+                    echo "Build Number: ${BUILD_NUMBER}"
+                    echo "Database Name: ${env.MONGO_INITDB_DATABASE}"
+                    echo "=========================================="
+                }
+            }
+        }
+
+        stage('Checkout Database') {
+            steps {
+                script {
+                    echo "Checking out branch: ${params.BRANCH_TO_BUILD} (Sparse Checkout for database/ only)"
+                    checkout([
+                        $class: 'GitSCM',
+                        branches: [[name: "*/${params.BRANCH_TO_BUILD}"]],
+                        doGenerateSubmoduleConfigurations: false,
+                        extensions: [
+                            [$class: 'SparseCheckoutPaths', sparseCheckoutPaths: [
+                                [$class: 'SparseCheckoutPath', path: 'database/']
+                            ]]
+                        ],
+                        submoduleCfg: [],
+                        userRemoteConfigs: [[url: 'https://github.com/smitharnold230/lumina-login.git']]
+                    ])
+                }
+            }
+        }
+
+        stage('Validate Docker & Environment') {
+            steps {
+                script {
+                    echo "Validating Docker installation and environment variables..."
+                    try {
+                        bat '''
+                            docker --version
+                            docker-compose --version
+                            echo MongoDB Database: %MONGO_INITDB_DATABASE%
+                        '''
+                    } catch (Exception e) {
+                        error("Docker validation failed: ${e.message}")
+                    }
+                }
+            }
+        }
+
+        stage('Stop & Remove Existing Database Container') {
+            steps {
+                script {
+                    echo "Removing existing database container if running..."
+                    dir('database') {
+                        bat '''
+                            docker-compose -f docker-compose.yml down database 2>nul || echo "No existing container to remove"
+                            timeout /t 5 /nobreak
+                        '''
+                    }
+                }
+            }
+        }
+
+        stage('Run Database Service') {
+            steps {
+                script {
+                    echo "Starting database service with environment variables..."
+                    dir('database') {
+                        withEnv([
+                            "NODE_ENV=${NODE_ENV}",
+                            "MONGO_INITDB_ROOT_USERNAME=${env.MONGO_INITDB_ROOT_USERNAME}",
+                            "MONGO_INITDB_ROOT_PASSWORD=${env.MONGO_INITDB_ROOT_PASSWORD}",
+                            "MONGO_INITDB_DATABASE=${env.MONGO_INITDB_DATABASE}",
+                            "DOCKER_IMAGE_TAG=${DOCKER_IMAGE_TAG}"
+                        ]) {
+                            bat '''
+                                echo Starting Database Service...
+                                docker-compose -f docker-compose.yml up -d --force-recreate database
+                                timeout /t 15 /nobreak
+                            '''
+                        }
+                    }
+                }
+            }
+        }
+
+        stage('Health Check Database') {
+            steps {
+                script {
+                    echo "Performing health check on database service..."
+                    retry(6) {
+                        try {
+                            bat '''
+                                timeout /t 2 /nobreak
+                                docker exec lumina-database mongosh --username admin --password strongpassword123 --authenticationDatabase admin --eval "db.adminCommand('ping')"
+                            '''
+                            echo "✓ Database health check passed"
+                        } catch (Exception e) {
+                            echo "Health check attempt failed, retrying..."
+                            throw e
+                        }
+                    }
+                }
+            }
+        }
+
+        stage('Verify Database Collections') {
+            steps {
+                script {
+                    echo "Verifying database collections..."
+                    bat '''
+                        docker exec lumina-database mongosh --username admin --password strongpassword123 --authenticationDatabase admin lumina --eval "db.getCollectionNames()"
+                    '''
+                }
+            }
+        }
+
+        stage('Verify Container Status') {
+            steps {
+                script {
+                    echo "Verifying container is running..."
+                    bat '''
+                        docker ps -f name=lumina-database --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
+                    '''
+                }
+            }
+        }
+
+        stage('Log Collection') {
+            steps {
+                script {
+                    echo "Collecting container logs..."
+                    bat '''
+                        echo === Database Container Logs ===
+                        docker logs lumina-database
+                    '''
+                }
+            }
+        }
+    }
+
+    post {
+        success {
+            script {
+                echo "=========================================="
+                echo "✓ Database Pipeline Completed Successfully"
+                echo "=========================================="
+                echo "MongoDB is running at: localhost:27017"
+                echo "Database: ${env.MONGO_INITDB_DATABASE}"
+                echo "Username: ${env.MONGO_INITDB_ROOT_USERNAME}"
+                echo "=========================================="
+            }
+        }
+
+        failure {
+            script {
+                echo "=========================================="
+                echo "✗ Database Pipeline Failed"
+                echo "=========================================="
+                bat '''
+                    echo === Container Status ===
+                    docker ps -a | findstr lumina-database
+                    echo.
+                    echo === Container Logs ===
+                    docker logs lumina-database 2>&1 || echo "No logs available"
+                '''
+            }
+        }
+
+        unstable {
+            script {
+                echo "Database pipeline is unstable. Check logs above."
+            }
+        }
+
+        always {
+            script {
+                echo "Pipeline execution finished at: ${new Date()}"
+            }
+        }
+    }
+}

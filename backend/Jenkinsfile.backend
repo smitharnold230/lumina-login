@@ -1,0 +1,226 @@
+pipeline {
+    agent any
+
+    options {
+        timestamps()
+        timeout(time: 30, unit: 'MINUTES')
+        buildDiscarder(logRotator(numToKeepStr: '10'))
+    }
+
+    parameters {
+        choice(
+            name: 'BRANCH_TO_BUILD',
+            choices: 'main\nprod',
+            description: 'Select the Git branch to checkout.'
+        )
+        string(
+            name: 'MONGODB_HOST',
+            defaultValue: '172.17.0.1',
+            description: 'MongoDB host (use host IP for Docker, or lumina-database for internal network)'
+        )
+        string(
+            name: 'MONGODB_PORT',
+            defaultValue: '27017',
+            description: 'MongoDB port'
+        )
+    }
+
+    environment {
+        NODE_ENV = 'production'
+        PORT = '5000'
+        MONGODB_USERNAME = 'admin'
+        MONGODB_PASSWORD = 'strongpassword123'
+        MONGODB_DATABASE = 'lumina'
+        JWT_SECRET = credentials('jwt-secret-key')
+        DOCKER_IMAGE_TAG = "${BUILD_NUMBER}_${params.BRANCH_TO_BUILD}"
+        MONGODB_URI = "mongodb://${env.MONGODB_USERNAME}:${env.MONGODB_PASSWORD}@${params.MONGODB_HOST}:${params.MONGODB_PORT}/${env.MONGODB_DATABASE}?authSource=admin"
+    }
+
+    stages {
+        stage('Initialization') {
+            steps {
+                script {
+                    echo "=========================================="
+                    echo "Backend Pipeline Initialization"
+                    echo "=========================================="
+                    echo "Branch: ${params.BRANCH_TO_BUILD}"
+                    echo "Build Number: ${BUILD_NUMBER}"
+                    echo "MongoDB URI: ${MONGODB_URI}"
+                    echo "=========================================="
+                }
+            }
+        }
+
+        stage('Checkout Backend') {
+            steps {
+                script {
+                    echo "Checking out branch: ${params.BRANCH_TO_BUILD} (Sparse Checkout for backend/ only)"
+                    checkout([
+                        $class: 'GitSCM',
+                        branches: [[name: "*/${params.BRANCH_TO_BUILD}"]],
+                        doGenerateSubmoduleConfigurations: false,
+                        extensions: [
+                            [$class: 'SparseCheckoutPaths', sparseCheckoutPaths: [
+                                [$class: 'SparseCheckoutPath', path: 'backend/']
+                            ]]
+                        ],
+                        submoduleCfg: [],
+                        userRemoteConfigs: [[url: 'https://github.com/smitharnold230/lumina-login.git']]
+                    ])
+                }
+            }
+        }
+
+        stage('Validate Docker & Environment') {
+            steps {
+                script {
+                    echo "Validating Docker installation and environment variables..."
+                    try {
+                        bat '''
+                            docker --version
+                            docker-compose --version
+                            echo MongoDB URI will be: %MONGODB_URI%
+                        '''
+                    } catch (Exception e) {
+                        error("Docker validation failed: ${e.message}")
+                    }
+                }
+            }
+        }
+
+        stage('Stop & Remove Existing Backend Container') {
+            steps {
+                script {
+                    echo "Removing existing backend container if running..."
+                    dir('backend') {
+                        bat '''
+                            docker-compose -f docker-compose.yml down backend 2>nul || echo "No existing container to remove"
+                            timeout /t 5 /nobreak
+                        '''
+                    }
+                }
+            }
+        }
+
+        stage('Build Backend Docker Image') {
+            steps {
+                script {
+                    echo "Building backend Docker image..."
+                    dir('backend') {
+                        bat '''
+                            docker build -t lumina-backend:%DOCKER_IMAGE_TAG% .
+                            docker tag lumina-backend:%DOCKER_IMAGE_TAG% lumina-backend:latest
+                        '''
+                    }
+                }
+            }
+        }
+
+        stage('Run Backend Service') {
+            steps {
+                script {
+                    echo "Starting backend service with environment variables..."
+                    dir('backend') {
+                        withEnv([
+                            "NODE_ENV=${NODE_ENV}",
+                            "PORT=${PORT}",
+                            "MONGODB_URI=${MONGODB_URI}",
+                            "JWT_SECRET=${JWT_SECRET}",
+                            "DB_NAME=${MONGODB_DATABASE}",
+                            "DOCKER_IMAGE_TAG=${DOCKER_IMAGE_TAG}"
+                        ]) {
+                            bat '''
+                                echo Starting Backend Service...
+                                docker-compose -f docker-compose.yml up -d --build --force-recreate backend
+                                timeout /t 10 /nobreak
+                            '''
+                        }
+                    }
+                }
+            }
+        }
+
+        stage('Health Check Backend') {
+            steps {
+                script {
+                    echo "Performing health check on backend service..."
+                    retry(5) {
+                        try {
+                            bat '''
+                                timeout /t 2 /nobreak
+                                curl -f http://localhost:5000/api/health
+                            '''
+                            echo "✓ Backend health check passed"
+                        } catch (Exception e) {
+                            echo "Health check attempt failed, retrying..."
+                            throw e
+                        }
+                    }
+                }
+            }
+        }
+
+        stage('Verify Container Status') {
+            steps {
+                script {
+                    echo "Verifying container is running..."
+                    bat '''
+                        docker ps -f name=lumina-backend --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
+                    '''
+                }
+            }
+        }
+
+        stage('Log Collection') {
+            steps {
+                script {
+                    echo "Collecting container logs..."
+                    bat '''
+                        echo === Backend Container Logs ===
+                        docker logs lumina-backend
+                    '''
+                }
+            }
+        }
+    }
+
+    post {
+        success {
+            script {
+                echo "=========================================="
+                echo "✓ Backend Pipeline Completed Successfully"
+                echo "=========================================="
+                echo "Backend is running at: http://localhost:5000"
+                echo "Health Check: http://localhost:5000/api/health"
+                echo "=========================================="
+            }
+        }
+
+        failure {
+            script {
+                echo "=========================================="
+                echo "✗ Backend Pipeline Failed"
+                echo "=========================================="
+                bat '''
+                    echo === Container Status ===
+                    docker ps -a | findstr lumina-backend
+                    echo.
+                    echo === Container Logs ===
+                    docker logs lumina-backend 2>&1 || echo "No logs available"
+                '''
+            }
+        }
+
+        unstable {
+            script {
+                echo "Backend pipeline is unstable. Check logs above."
+            }
+        }
+
+        always {
+            script {
+                echo "Pipeline execution finished at: ${new Date()}"
+            }
+        }
+    }
+}
