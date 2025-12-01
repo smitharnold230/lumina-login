@@ -1,10 +1,10 @@
 import express from 'express';
 import cors from 'cors';
-import dotenv from 'dotenv';
+#import dotenv from 'dotenv';
 import { MongoClient, Db } from 'mongodb';
 import authRoutes from './routes/auth';
 
-dotenv.config();
+#dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -15,7 +15,7 @@ app.use(express.json());
 
 // MongoDB connection
 let db: Db;
-const mongoClient = new MongoClient(process.env.MONGODB_URI || 'mongodb://admin:password123@localhost:27017/lumina?authSource=admin');
+const mongoClient = new MongoClient(process.MONGODB_URI || 'mongodb://admin:password123@localhost:27017/lumina?authSource=admin');
 
 async function connectDB() {
   try {
