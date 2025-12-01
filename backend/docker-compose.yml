@@ -7,7 +7,7 @@ services:
       dockerfile: Dockerfile
     image: lumina-backend:local
     container_name: lumina-backend
-    #env_file: ../.env.backend
+    env_file: ../.env.backend
     ports:
       - "5000:5000"
     #networks:
