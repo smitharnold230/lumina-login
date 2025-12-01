@@ -85,10 +85,10 @@ pipeline {
                 script {
                     echo "Removing existing database container if running..."
                     dir('database') {
-                        bat '''
-                            docker-compose -f docker-compose.yml down database 2>nul || echo "No existing container to remove"
-                            timeout /t 5 /nobreak
-                        '''
+                        catchError(buildResult: 'SUCCESS', stageResult: 'SUCCESS') {
+                            bat 'docker-compose -f docker-compose.yml down database'
+                        }
+                        sleep(time: 5, unit: 'SECONDS')
                     }
                 }
             }
@@ -109,8 +109,8 @@ pipeline {
                             bat '''
                                 echo Starting Database Service...
                                 docker-compose -f docker-compose.yml up -d --force-recreate database
-                                timeout /t 15 /nobreak
                             '''
+                            sleep(time: 30, unit: 'SECONDS')
                         }
                     }
                 }
@@ -121,12 +121,16 @@ pipeline {
             steps {
                 script {
                     echo "Performing health check on database service..."
-                    retry(6) {
+                    retry(10) {
                         try {
-                            bat '''
-                                timeout /t 2 /nobreak
-                                docker exec lumina-database mongosh --username admin --password strongpassword123 --authenticationDatabase admin --eval "db.adminCommand('ping')"
-                            '''
+                            sleep(time: 3, unit: 'SECONDS')
+                            withEnv([
+                                "MONGO_PASSWORD=${env.MONGO_INITDB_ROOT_PASSWORD}"
+                            ]) {
+                                bat '''
+                                    docker exec lumina-database mongosh --username admin --password %MONGO_PASSWORD% --authenticationDatabase admin --eval "db.adminCommand('ping')"
+                                '''
+                            }
                             echo "✓ Database health check passed"
                         } catch (Exception e) {
                             echo "Health check attempt failed, retrying..."
@@ -141,9 +145,13 @@ pipeline {
             steps {
                 script {
                     echo "Verifying database collections..."
-                    bat '''
-                        docker exec lumina-database mongosh --username admin --password strongpassword123 --authenticationDatabase admin lumina --eval "db.getCollectionNames()"
-                    '''
+                    withEnv([
+                        "MONGO_PASSWORD=${env.MONGO_INITDB_ROOT_PASSWORD}"
+                    ]) {
+                        bat '''
+                            docker exec lumina-database mongosh --username admin --password %MONGO_PASSWORD% --authenticationDatabase admin lumina --eval "db.getCollectionNames()"
+                        '''
+                    }
                 }
             }
         }

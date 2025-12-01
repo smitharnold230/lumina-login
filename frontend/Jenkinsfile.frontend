@@ -88,10 +88,10 @@ pipeline {
                 script {
                     echo "Removing existing frontend container if running..."
                     dir('frontend') {
-                        bat '''
-                            docker-compose -f docker-compose.yml down frontend 2>nul || echo "No existing container to remove"
-                            timeout /t 5 /nobreak
-                        '''
+                        catchError(buildResult: 'SUCCESS', stageResult: 'SUCCESS') {
+                            bat 'docker-compose -f docker-compose.yml down frontend'
+                        }
+                        sleep(time: 5, unit: 'SECONDS')
                     }
                 }
             }
@@ -124,8 +124,8 @@ pipeline {
                             bat '''
                                 echo Starting Frontend Service...
                                 docker-compose -f docker-compose.yml up -d --build --force-recreate frontend
-                                timeout /t 10 /nobreak
                             '''
+                            sleep(time: 10, unit: 'SECONDS')
                         }
                     }
                 }
