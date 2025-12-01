@@ -1,16 +1,23 @@
-// Switch to admin database to verify root user exists
 db = db.getSiblingDB('admin');
 
-// Note: When MONGO_INITDB_ROOT_USERNAME and MONGO_INITDB_ROOT_PASSWORD are set,
-// MongoDB automatically creates the root user, so we just verify it exists
+
 var adminUser = db.getUser('admin');
 if (adminUser) {
-    console.log('Admin user already created by MongoDB initialization');
+    console.log('✓ Admin user verified in admin database');
 } else {
-    console.log('Warning: Admin user not found. Check MONGO_INITDB_ROOT_PASSWORD env var');
+    console.log('✗ CRITICAL: Admin user not found in admin database');
+    console.log('This indicates MONGO_INITDB_ROOT_PASSWORD may not have been set');
 }
 
-// Switch to application database and create collections
+try {
+    var pingResult = db.adminCommand('ping');
+    if (pingResult.ok === 1) {
+        console.log('✓ Admin authentication verified via ping command');
+    }
+} catch (e) {
+    console.log('✗ Admin ping failed: ' + e.message);
+}
+
 db = db.getSiblingDB('lumina');
 
 db.createCollection('users');

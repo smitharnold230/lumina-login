@@ -5,16 +5,16 @@ services:
     image: mongo:latest
     container_name: lumina-database
     environment:
-      - MONGO_INITDB_ROOT_USERNAME=${MONGO_INITDB_ROOT_USERNAME}
+      - MONGO_INITDB_ROOT_USERNAME=admin
       - MONGO_INITDB_ROOT_PASSWORD=${MONGO_INITDB_ROOT_PASSWORD}
-      - MONGO_INITDB_DATABASE=${MONGO_INITDB_DATABASE}
+      - MONGO_INITDB_DATABASE=lumina
     ports:
       - "27017:27017"
     volumes:
       - ./mongo-init.js:/docker-entrypoint-initdb.d/mongo-init.js:ro
       - mongo-data:/data/db
     healthcheck:
-      test: echo 'db.adminCommand("ping").ok' | mongosh localhost:27017/admin --quiet
+      test: echo 'db.adminCommand("ping").ok' | mongosh localhost:27017/admin --username admin --password $${MONGO_INITDB_ROOT_PASSWORD} --authenticationDatabase admin --quiet
       interval: 5s
       timeout: 10s
       retries: 10
