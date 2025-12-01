@@ -1,0 +1,17 @@
+version: "3.8"
+
+services:
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: lumina-frontend:local
+    container_name: lumina-frontend
+    ports:
+      - "80:80"
+    networks:
+      - lumina-network
+
+networks:
+  lumina-network:
+    external: true
