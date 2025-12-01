@@ -10,14 +10,14 @@ services:
     env_file: ../.env.backend
     ports:
       - "5000:5000"
-    networks:
-      - lumina-network
+    #networks:
+    #  - lumina-network
     healthcheck:
       test: ["CMD", "wget", "--spider", "-q", "http://localhost:5000/api/health"]
       interval: 10s
       timeout: 5s
       retries: 5
 
-networks:
-  lumina-network:
-    external: true
+#networks:
+#  lumina-network:
+#    external: true
