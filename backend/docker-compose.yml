@@ -5,24 +5,20 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: lumina-backend:local
+    image: lumina-backend:latest
     container_name: lumina-backend
     environment:
       - NODE_ENV=${NODE_ENV}
       - PORT=${PORT}
       - MONGODB_URI=${MONGODB_URI}
       - JWT_SECRET=${JWT_SECRET}
-    #env_file: ../.env.backend
+      - DB_NAME=lumina
     ports:
       - "5000:5000"
-    #networks:
-    #  - lumina-network
     healthcheck:
-      test: ["CMD", "wget", "--spider", "-q", "http://localhost:5000/api/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:5000/api/health"]
       interval: 10s
       timeout: 5s
       retries: 5
-
-#networks:
-#  lumina-network:
-#    external: true
+      start_period: 30s
+    restart: unless-stopped

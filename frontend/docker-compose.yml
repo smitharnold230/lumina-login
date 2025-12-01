@@ -5,7 +5,17 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: lumina-frontend:local
+    image: lumina-frontend:latest
     container_name: lumina-frontend
+    environment:
+      - NODE_ENV=${NODE_ENV}
+      - VITE_API_URL=${VITE_API_URL}
     ports:
       - "80:80"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:80"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
