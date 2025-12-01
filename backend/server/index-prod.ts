@@ -1,12 +1,9 @@
 import express from 'express';
 import cors from 'cors';
-import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { MongoClient, Db } from 'mongodb';
 import authRoutes from './routes/auth.js';
-
-dotenv.config();
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -23,12 +20,16 @@ app.use(express.static(path.join(__dirname, '../dist')));
 
 // MongoDB connection
 let db: Db;
-const mongoClient = new MongoClient(process.env.MONGODB_URI || 'mongodb://admin:password123@localhost:27017/lumina?authSource=admin');
+const mongoUri = process.env.MONGODB_URI;
+if (!mongoUri) {
+  throw new Error("MONGODB_URI must be set via pipeline");
+}
+const mongoClient = new MongoClient(mongoUri);
 
 async function connectDB() {
   try {
     await mongoClient.connect();
-    db = mongoClient.db('lumina');
+    db = mongoClient.db(process.env.DB_NAME || 'lumina');
     console.log('✅ Connected to MongoDB');
   } catch (error) {
     console.error('❌ MongoDB connection error:', error);
@@ -38,7 +39,7 @@ async function connectDB() {
 
 // Make db available to routes
 app.use((req, res, next) => {
-  req.db = db;
+  (req as any).db = db;
   next();
 });
 
