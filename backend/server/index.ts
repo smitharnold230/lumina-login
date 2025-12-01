@@ -15,7 +15,7 @@ app.use(express.json());
 
 // MongoDB connection
 let db: Db;
-const mongoClient = new MongoClient(process.MONGODB_URI || 'mongodb://admin:password123@localhost:27017/lumina?authSource=admin');
+const mongoClient = new MongoClient(process.env.MONGODB_URI || 'mongodb://admin:password123@localhost:27017/lumina?authSource=admin');
 
 async function connectDB() {
   try {
