@@ -54,19 +54,16 @@ pipeline {
         stage('Checkout Backend') {
             steps {
                 script {
-                    echo "Checking out branch: ${params.BRANCH_TO_BUILD} (Sparse Checkout for backend/ only)"
-                    checkout([
-                        $class: 'GitSCM',
-                        branches: [[name: "*/${params.BRANCH_TO_BUILD}"]],
-                        doGenerateSubmoduleConfigurations: false,
-                        extensions: [
-                            [$class: 'SparseCheckoutPaths', sparseCheckoutPaths: [
-                                [$class: 'SparseCheckoutPath', path: 'backend/']
-                            ]]
-                        ],
-                        submoduleCfg: [],
-                        userRemoteConfigs: [[url: 'https://github.com/smitharnold230/lumina-login.git']]
-                    ])
+                    echo "Cloning backend folder from GitHub repository..."
+                    bat '''
+                        echo Cloning backend files from GitHub...
+                        if exist "backend" rmdir /s /q backend
+                        git clone --depth 1 --branch %BRANCH_TO_BUILD% https://github.com/smitharnold230/lumina-login.git temp-repo
+                        mkdir backend
+                        xcopy "temp-repo\\backend" "backend\\" /E /I /Y
+                        rmdir /s /q temp-repo
+                        echo Backend folder cloned successfully from GitHub
+                    '''
                 }
             }
         }
@@ -91,10 +88,10 @@ pipeline {
         stage('Stop & Remove Existing Backend Container') {
             steps {
                 script {
-                    echo "Removing existing backend container if running..."
+                    echo "Removing existing backend container and volumes if running..."
                     dir('backend') {
                         catchError(buildResult: 'SUCCESS', stageResult: 'SUCCESS') {
-                            bat 'docker-compose -f docker-compose.yml down backend'
+                            bat 'docker-compose -f docker-compose.yml down -v backend'
                         }
                         sleep(time: 5, unit: 'SECONDS')
                     }
